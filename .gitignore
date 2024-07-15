@@ -39,8 +39,8 @@ cleansers_tool_box/spectre/output/*
 other_defenses_tool_box/logs
 other_defenses_tool_box/results/*
 !other_defenses_tool_box/results/.dummy
-other_defenses_tool_box/none/*
-!other_defenses_tool_box/none/.dummy
+other_defenses_tool_box/none/clean_set/*
+!other_defenses_tool_box/none/clean_set/.dummy
 
 slurm_scripts/logs
 slurm-*.out
