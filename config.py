@@ -96,6 +96,31 @@ arch = {
     'abl':  wresnet.WideResNet,
 }
 
+def get_layer(model):
+    model = model.module if type(model) == torch.nn.DataParallel else model
+    if type(model) == resnet.ResNet:
+        return model.avgpool
+    elif type(model) == torchvision.models.resnet.resnet18:
+        return model.avgpool
+    elif type(model) == ember_nn.EmberNN:
+        return model.drop3
+    elif type(model) == gtsrb_cnn.GTSRB_CNN:
+        return model.fc2
+    else:
+        raise NotImplementedError('<Unimplemented Model> %s' % model.__class__.__name__)
+
+def get_feature_size(model):
+    model = model.module if type(model) == torch.nn.DataParallel else model
+    if type(model) == resnet.ResNet:
+        return model.linear.in_features
+    elif type(model) == torchvision.models.resnet.resnet18:
+        return model.fc.in_features
+    elif type(model) == ember_nn.EmberNN:
+        return model.dense4.in_features
+    elif type(model) == gtsrb_cnn.GTSRB_CNN:
+        return model.fc3.in_features
+    else:
+        raise NotImplementedError(f'<Unimplemented Model>  {model.__class__.__name__}, {type(model)}')
 
 # adapitve-patch triggers for different datasets
 adaptive_patch_train_trigger_names = {

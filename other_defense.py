@@ -83,6 +83,17 @@ if args.defense == 'NC':
         oracle=False,
     )
     defense.detect()
+elif args.defense == 'NCG':
+    from other_defenses_tool_box.NCG import NeuralCleanseGeneralized
+    defense = NeuralCleanseGeneralized(
+        args,
+        epoch=30,
+        batch_size=32,
+        treshold=2,
+        device='cuda',
+        mitigation=True,
+    )
+    defense.detect()
 elif args.defense == 'AC':
     from other_defenses_tool_box.activation_clustering import AC
     defense = AC(

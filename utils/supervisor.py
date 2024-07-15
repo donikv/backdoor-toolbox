@@ -163,11 +163,11 @@ def get_transforms(args):
         if args.no_normalize:
             data_transform_aug = transforms.Compose([
                 transforms.RandomRotation(15),
-                transforms.Resize((32, 32)),
+                transforms.Resize((32, 32), antialias=True),
                 transforms.ToTensor(),
             ])
             data_transform = transforms.Compose([
-                transforms.Resize((32, 32)),
+                transforms.Resize((32, 32), antialias=True),
                 transforms.ToTensor()
             ])
             trigger_transform = transforms.Compose([
@@ -178,12 +178,12 @@ def get_transforms(args):
         else:
             data_transform_aug = transforms.Compose([
                 transforms.RandomRotation(15),
-                transforms.Resize((32, 32)),
+                transforms.Resize((32, 32), antialias=True),
                 transforms.ToTensor(),
                 transforms.Normalize((0.3337, 0.3064, 0.3171), (0.2672, 0.2564, 0.2629))
             ])
             data_transform = transforms.Compose([
-                transforms.Resize((32, 32)),
+                transforms.Resize((32, 32), antialias=True),
                 transforms.ToTensor(),
                 transforms.Normalize((0.3337, 0.3064, 0.3171), (0.2672, 0.2564, 0.2629))
             ])
@@ -323,20 +323,20 @@ def get_transforms(args):
             ])
     elif args.dataset == 'imagenet':
         data_transform_aug = transforms.Compose([
-            transforms.Resize((256, 256)),
+            transforms.Resize((256, 256), antialias=True),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-            transforms.RandomResizedCrop(224),
+            transforms.RandomResizedCrop(224, antialias=False),
             transforms.RandomHorizontalFlip()
         ])
         data_transform = transforms.Compose([
-            transforms.Resize((256, 256)),
+            transforms.Resize((256, 256), antialias=True),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
             transforms.CenterCrop(224),
         ])
         trigger_transform = transforms.Compose([
-            transforms.Resize((256, 256)),
+            transforms.Resize((256, 256), antialias=True),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
             transforms.CenterCrop(224),
