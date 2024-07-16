@@ -46,12 +46,18 @@ class NeuralCleanseGeneralized(BackdoorDefense):
         self.mitigation = mitigation
         self.target_label = None
 
+        self.attack_succ_threshold = 0.99
+        self.init_cost = 0.01
+        self.cost_multiplier_up = 1.5
+        self.cost_multiplier_down = 1.1
+        self.patience = 5
+
         self.folder_path = 'other_defenses_tool_box/results/NCG'
         if not os.path.exists(self.folder_path):
             os.mkdir(self.folder_path)
 
         self.loader = generate_dataloader(dataset=self.dataset, dataset_path=config.data_dir, batch_size=batch_size, split='val')
-        self.tqdm = True
+        self.tqdm = False
         self.suspect_class = config.target_class[args.dataset] # default with oracle
         self.layer = config.get_layer(self.model)
         self.train_args = {"batch_size": batch_size, 'num_workers': 1, 'pin_memory': True, 'shuffle': True}
@@ -68,7 +74,6 @@ class NeuralCleanseGeneralized(BackdoorDefense):
             trigger, mask = self.results[target][0]
             trigger = torch.tensor(trigger, device=self.device, requires_grad=False)
             mask = torch.tensor(mask, device=self.device, requires_grad=False)
-            print(self.model)
             retrained_model = self.retrain(make_submodel(self.model), self.features, trigger, mask, self.device, self.criterion, epochs=30, lr=0.01, amp=1)
             self.retrained_model = retrained_model
             break
@@ -81,9 +86,10 @@ class NeuralCleanseGeneralized(BackdoorDefense):
 
     def run(self, model, clean_dataset):
         for target in self.classes:
-            trigger, mask, trigger_norm = self.optimize_minimal_trigger(model, clean_dataset, target)
-            self.logger.log(f"Target: {target}, Trigger norm: {trigger_norm}")
-            self.results[target] = ((trigger, mask), trigger_norm)
+            trigger, mask, trigger_norm, avg = self.optimize_minimal_trigger(model, clean_dataset, target)
+            self.logger.log(f"Target: {target}, Trigger norm: {trigger_norm}, Accuracy: {avg}")
+            if avg >= 0.95:
+                self.results[target] = ((trigger, mask), trigger_norm)
         
         mean_norm = np.mean([result[1] for result in self.results.values()])
         self.results = self.detect_outliers(self.results, mean_norm)
@@ -110,13 +116,13 @@ class NeuralCleanseGeneralized(BackdoorDefense):
             self.results_round2 = {}
             self.epochs *= 2
             for target in self.suspect_labels:
-                trigger, mask, trigger_norm = self.optimize_minimal_trigger(model, clean_dataset, target)
-                self.logger.log(f"Target: {target}, Trigger norm: {trigger_norm}")
+                trigger, mask, trigger_norm, acc = self.optimize_minimal_trigger(model, clean_dataset, target)
+                self.logger.log(f"Target: {target}, Trigger norm: {trigger_norm}, Accuracy: {acc}")
                 self.results_round2[target] = ((trigger, mask), trigger_norm)
 
             suspect_labels2 = sorted(self.results_round2.keys(), key=lambda x: self.results_round2[x][1], reverse=False)
             self.target_label = suspect_labels2[0]
-            self.logger.log(f"Target label: {self.target_label}")
+            self.logger.log(f"Target label round 2: {self.target_label}")
         else:
             self.target_label = None
 
@@ -132,17 +138,21 @@ class NeuralCleanseGeneralized(BackdoorDefense):
         model.eval()
         model = model.requires_grad_(False)
         #optimizer = torch.optim.AdamW([trigger, mask], lr=0.1, weight_decay=0.05)
-        optimizer = torch.optim.Adam([trigger, mask], lr=0.5)
+        optimizer = torch.optim.Adam([trigger, mask], lr=0.1, betas=(0.9, 0.9)) #, lr=0.5)
+        acc = AverageMeter("Accuracy")
 
         loss_fn = torch.nn.CrossEntropyLoss()
-        l = 0.4
-        l2 = 0.4
+        l = 0.1
+        l2 = 0.1
 
-        c0 = 0
+        cost, cost_up_counter, cost_down_counter, cost_up_flag, cost_down_flag, cost_set_counter = self.init_cost, 0, 0, False, False, 0
         epochs = self.epochs
         should_break = False
-        for _ in (pbar := tqdm(range(epochs), total=epochs, ncols=100)):
+        norm = torch.nn.LayerNorm(self.input_size, device=self.device)
+        r = (pbar := tqdm(range(epochs), total=epochs, ncols=100)) if self.tqdm else range(epochs)
+        for _ in r:
             correct = 0
+            acc.reset()
             for _, (data, y) in enumerate(clean_dataloader):
                 data = data.to(self.device)
                 y = y.to(self.device)
@@ -150,34 +160,30 @@ class NeuralCleanseGeneralized(BackdoorDefense):
 
                 # m = torch.clip(mask, 0, 1)
                 # t = torch.clip(trigger, 0, 1)
-                m = torch.sigmoid(mask)
-                t=trigger
+                m = tanh_func(mask) # torch.sigmoid(mask) # torch.tanh(mask) / 2 + 0.5
+                t = trigger #tanh_func(trigger) #torch.sigmoid(trigger) # trigger
                 # t = torch.sigmoid(trigger)
                 #print(data.shape)
                 x_hat = data * (1 - m) + t * m
+                x_hat = norm(x_hat)
                 y_hat = model(x_hat)
                 yt = torch.ones_like(y) * target
 
-                loss = loss_fn(y_hat, yt) + l * torch.norm(m, p=1) + l2 * torch.norm(t, p=2)
+                loss = loss_fn(y_hat, yt) + cost * torch.norm(m, p=1) + cost * torch.norm(t, p=2)
                 loss.backward()
                 optimizer.step()
                 
                 pred = y_hat.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+                c = pred.eq(yt.view_as(pred)).float().mean().item()
+                acc.update(c)
                 correct += pred.eq(yt.view_as(pred)).sum().item()
             c = correct / len(clean_dataloader.dataset)
-            pbar.set_description(f'Loss: {loss.item():.4f} \tCorrect: {c:.4f}')
-            if c < 0.99 and c - c0 < 0.01:
-                l /= 1.5
-                #l2 /= 1.1
-            elif c > 0.99:
-                l *= 3
-                #l2 *= 1.2
-            c0 = c
-            if should_break:
-                break
-        m = torch.sigmoid(mask)
-        t = torch.sigmoid(trigger)
-        return (trigger).detach().cpu().numpy()[0], m.detach().cpu().numpy()[0], torch.norm((t*m).detach(), p=1).cpu().numpy()
+            if self.tqdm:
+                pbar.set_description(f'Loss: {loss.item():.4f} \tCorrect: {c:.4f}')
+            cost, cost_up_counter, cost_down_counter, cost_up_flag, cost_down_flag, cost_set_counter = self.modify_cost(acc, cost, cost_up_counter, cost_down_counter, cost_up_flag, cost_down_flag, cost_set_counter)
+        m = tanh_func(mask) #torch.sigmoid(mask) #torch.tanh(mask) / 2 + 0.5
+        t = trigger #tanh_func(trigger) #torch.sigmoid(trigger) #torch.tanh(trigger) / 2 + 0.5
+        return (t).detach().cpu().numpy()[0], m.detach().cpu().numpy()[0], torch.norm((t*m).detach(), p=1).cpu().numpy(), acc.avg
 
     
     def hook(self, model, input, output):
@@ -215,6 +221,39 @@ class NeuralCleanseGeneralized(BackdoorDefense):
                 loss.backward()
                 optimizer.step()
         return model
+
+    def modify_cost(self, acc, cost, cost_up_counter, cost_down_counter, cost_up_flag, cost_down_flag, cost_set_counter):
+        # check cost modification
+        if cost == 0 and acc.avg >= self.attack_succ_threshold:
+            cost_set_counter += 1
+            if cost_set_counter >= self.patience:
+                cost = self.init_cost
+                cost_up_counter = 0
+                cost_down_counter = 0
+                cost_up_flag = False
+                cost_down_flag = False
+                print('initialize cost to %.2f' % cost)
+        else:
+            cost_set_counter = 0
+
+        if acc.avg >= self.attack_succ_threshold:
+            cost_up_counter += 1
+            cost_down_counter = 0
+        else:
+            cost_up_counter = 0
+            cost_down_counter += 1
+
+        if cost_up_counter >= self.patience:
+            cost_up_counter = 0
+            print('up cost from %.4f to %.4f' % (cost, cost * self.cost_multiplier_up))
+            cost *= self.cost_multiplier_up
+            cost_up_flag = True
+        elif cost_down_counter >= self.patience:
+            cost_down_counter = 0
+            print('down cost from %.4f to %.4f' % (cost, cost / self.cost_multiplier_down))
+            cost /= self.cost_multiplier_down
+            cost_down_flag = True
+        return cost, cost_up_counter, cost_down_counter, cost_up_flag, cost_down_flag, cost_set_counter
 
 class ActivationsDataset(Dataset):
     def __init__(self, activations_classes):

@@ -87,7 +87,7 @@ elif args.defense == 'NCG':
     from other_defenses_tool_box.NCG import NeuralCleanseGeneralized
     defense = NeuralCleanseGeneralized(
         args,
-        epoch=30,
+        epoch=100,
         batch_size=32,
         treshold=2,
         device='cuda',

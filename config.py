@@ -77,6 +77,13 @@ trigger_default = {
         'blend' : 'hellokitty_224.png',
         'trojan' : 'trojan_watermark_224.png',
         'SRA': 'phoenix_corner_256.png',
+    },
+    'imagenette': {
+        'none': 'none',
+        'badnet': 'badnet_patch_256.png',
+        'blend' : 'hellokitty_224.png',
+        'trojan' : 'trojan_watermark_224.png',
+        'SRA': 'phoenix_corner_256.png',
     }
 }
 
