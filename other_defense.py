@@ -94,6 +94,30 @@ elif args.defense == 'NCG':
         mitigation=True,
     )
     defense.detect()
+elif args.defense == 'BTI-DBFP':
+    from other_defenses_tool_box.BTI_DBFP import BTIDBFP
+    defense = BTIDBFP(
+        args,
+        epoch=100,
+        batch_size=32,
+        gen_lr=1e-3,
+        device='cuda',
+        # pur_norm_bound=0.5,
+        # mround=100,
+        # nround=100,
+        # earlystop=False,
+    )
+    defense.detect()
+elif args.defense == 'BTI-DBFU':
+    from other_defenses_tool_box.BTI_DBFU import BTIDBFU
+    defense = BTIDBFU(
+        args,
+        epoch=3,
+        batch_size=32,
+        gen_lr=1e-3,
+        device='cuda',
+    )
+    defense.detect()
 elif args.defense == 'AC':
     from other_defenses_tool_box.activation_clustering import AC
     defense = AC(
