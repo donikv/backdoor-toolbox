@@ -238,6 +238,13 @@ else:
                 if args.poison_type == 'none':
                     args.poison_rate = temp
 
+            elif args.cleanser == "NCG":
+                from other_defenses_tool_box.NCG import NeuralCleanseGeneralized
+                device = torch.device(f"cuda" if torch.cuda.is_available() else "cpu")
+                ncg = NeuralCleanseGeneralized(args, device=device)
+                ncg.load()
+                suspicious_indices = ncg.cleanser(poisoned_set, model, num_classes, args)
+
             elif args.cleanser == "AC":
                 from cleansers_tool_box import activation_clustering
                 suspicious_indices = activation_clustering.cleanser(poisoned_set, model, num_classes, args)

@@ -544,10 +544,13 @@ def define_objective(inputs, labels):
 def batched_step(model, inputs, labels, poison_delta, poison_slices, criterion, target_grad, target_gnorm, augment, normalizer):
     """Take a step toward minmizing the current target loss."""
     delta_slice = poison_delta[poison_slices]
+    # print("delta_slice:", delta_slice)
     delta_slice.requires_grad_(True)
     poisoned_inputs = inputs.detach() + delta_slice
     closure = define_objective(augment(normalizer(poisoned_inputs)), labels)
     loss, prediction = closure(model, criterion, target_grad, target_gnorm)
+    if poison_delta.grad is None:
+        poison_delta.grad = torch.zeros_like(poison_delta)
     poison_delta.grad[poison_slices] = delta_slice.grad.detach()
     return loss.item(), prediction.item()
 

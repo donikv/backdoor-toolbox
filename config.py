@@ -10,7 +10,7 @@ data_dir = './data' # defaul clean dataset directory
 triggers_dir = './triggers' # default triggers directory
 imagenet_dir = '/scratch/gpfs/DATASETS/imagenet/ilsvrc_2012_classification_localization' # ImageNet dataset directory (USE YOUR OWN!)
 target_class = {
-    'cifar10' : 0,
+    'cifar10' : 0, #TODO CHANGE BACK TO 0
     'gtsrb' : 2,
     # 'gtsrb' : 12, # BadEncoder
     'imagenette': 0,
