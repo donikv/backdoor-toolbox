@@ -1,6 +1,6 @@
-# torch==1.12.1
-# torchaudio==0.12.1
-# torchvision==0.13.1
+torch
+torchaudio
+torchvision
 h5py #==3.8.0
 higher #==0.2.1
 imageio

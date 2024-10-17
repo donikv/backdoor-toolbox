@@ -112,7 +112,7 @@ elif args.defense == 'BTI-DBFU':
     from other_defenses_tool_box.BTI_DBFU import BTIDBFU
     defense = BTIDBFU(
         args,
-        epoch=3,
+        epoch=5,
         batch_size=32,
         gen_lr=1e-3,
         device='cuda',

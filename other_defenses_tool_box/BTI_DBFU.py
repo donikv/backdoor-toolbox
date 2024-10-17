@@ -52,7 +52,7 @@ class MaskGenerator(nn.Module):
 class BTIDBFU(BackdoorDefense):
     name: str = 'BTI-DBFU'
 
-    def __init__(self, args, epoch=50, batch_size=32, device='cpu', pretrained_path='models', gen_lr=1e-3) -> None:
+    def __init__(self, args, epoch=5, batch_size=128, device='cpu', pretrained_path='models', gen_lr=1e-3) -> None:
         super().__init__(args)
 
         self.args = args
@@ -79,12 +79,12 @@ class BTIDBFU(BackdoorDefense):
         self.detected_tlabel = None
 
         self.tlabel = config.target_class[args.dataset] # default with oracle
-        self.mround = 1
-        self.uround = 1
-        self.ul_round = 1
+        self.mround = 20
+        self.uround = 30
+        self.ul_round = 30
         self.norm_bound = 0.3
         self.feat_bound = 3
-        self.earlystop = True 
+        self.earlystop = False 
         self.size = self.img_size
 
     def detect(self):

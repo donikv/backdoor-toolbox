@@ -183,7 +183,7 @@ if not os.path.exists(poison_set_dir):
 if args.poison_type in ['basic', 'badnet', 'blend', 'clean_label', 'refool',
                         'adaptive_blend', 'adaptive_patch', 'adaptive_k_way',
                         'SIG', 'TaCT', 'WaNet', 'SleeperAgent', 'none',
-                        'badnet_all_to_all', 'trojan']:
+                        'badnet_all_to_all', 'trojan', 'color']:
 
     trigger_name = args.trigger
     trigger_path = os.path.join(config.triggers_dir, trigger_name)
@@ -248,6 +248,11 @@ if args.poison_type in ['basic', 'badnet', 'blend', 'clean_label', 'refool',
                                                   poison_rate=args.poison_rate, trigger=trigger,
                                                   path=poison_set_dir, target_class=config.target_class[args.dataset],
                                                   alpha=alpha)
+    elif args.poison_type == 'color':
+        from poison_tool_box import color
+        poison_generator = color.poison_generator(img_size=img_size, dataset=train_set, 
+                                                  poison_rate=args.poison_rate, path=poison_set_dir, 
+                                                  target_class=config.target_class[args.dataset])
     elif args.poison_type == 'refool':
         from poison_tool_box import refool
         poison_generator = refool.poison_generator(img_size=img_size, dataset=train_set,

@@ -48,6 +48,7 @@ trigger_default = {
         'trojan': 'trojan_square_32.png',
         'bpp': 'none',
         'WB': 'none',
+        'color': 'none'
     },
     'gtsrb': {
         'none' : 'none',
@@ -70,6 +71,7 @@ trigger_default = {
         'BadEncoder': 'none',
         'SRA': 'phoenix_corner_32.png',
         'trojan': 'trojan_square_32.png',
+        'color': 'none'
     },
     'imagenet': {
         'none': 'none',
@@ -77,6 +79,7 @@ trigger_default = {
         'blend' : 'hellokitty_224.png',
         'trojan' : 'trojan_watermark_224.png',
         'SRA': 'phoenix_corner_256.png',
+        'color': 'none'
     },
     'imagenette': {
         'none': 'none',
@@ -84,6 +87,7 @@ trigger_default = {
         'blend' : 'hellokitty_224.png',
         'trojan' : 'trojan_watermark_224.png',
         'SRA': 'phoenix_corner_256.png',
+        'color': 'none'
     }
 }
 

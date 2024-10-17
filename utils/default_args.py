@@ -2,7 +2,7 @@ parser_choices = {
 
     'dataset': ['gtsrb', 'cifar10', 'cifar100', 'imagenette', 'ember', 'imagenet'],
     'poison_type': [  # Poisoning attacks
-        'basic', 'badnet', 'blend', 'dynamic', 'clean_label', 'TaCT', 'SIG', 'WaNet', 'refool', 'ISSBA',
+        'basic', 'badnet', 'blend', 'dynamic', 'clean_label', 'TaCT', 'SIG', 'WaNet', 'refool', 'ISSBA', 'color',
         'adaptive_blend', 'adaptive_patch', 'adaptive_k_way', 'none', 'badnet_all_to_all', 'trojan', 'SleeperAgent',
         # Other attacks
         'trojannn', 'BadEncoder', 'SRA', 'bpp', 'WB'],

@@ -690,5 +690,10 @@ def get_poison_transform(poison_type, dataset_name, target_class, source_class=1
         poison_transform = WB.poison_transform()
         return poison_transform
 
+    elif poison_type == "color":
+        from poison_tool_box import color
+        poison_transform = color.poison_transform(img_size=img_size, target_class=target_class)
+        return poison_transform
+
     else:
         raise NotImplementedError('<Undefined> Poison_Type = %s' % poison_type)
