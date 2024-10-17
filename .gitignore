@@ -3,6 +3,7 @@
 assets/*
 !assets/backdoor-toolbox.gif
 !assets/.dummy
+.vscode/*
 
 data/cifar10/cifar*
 data/cifar10/clean_label/*
@@ -13,6 +14,8 @@ data/imagenette2/*
 !data/imagenette2/.dummy
 data/VOCdevkit/*
 !data/VOCdevkit/.dummy
+clean_dataset/*
+fully_poisoned_training_datasets/*
 
 models/*
 !models/.dummy
