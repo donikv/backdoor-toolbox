@@ -86,6 +86,9 @@ class BTIDBFU(BackdoorDefense):
         self.feat_bound = 3
         self.earlystop = False 
         self.size = self.img_size
+        print("BTI-DBFU Defense Initialized, Number of parameters classifier: ", sum(p.numel() for p in self.classifier.parameters())) # if p.requires_grad
+        print("Number of parameters bd_gen: ", sum(p.numel() for p in self.bd_gen.parameters()))
+        # print("Number of parameters mask_gen: ", sum(p.numel() for p in self.mask_gen.parameters()))
 
     def detect(self):
         classifier, bd_gen = self.classifier, self.bd_gen
@@ -196,6 +199,7 @@ class BTIDBFU(BackdoorDefense):
         feat_shape = tmp_feat.shape
         init_mask = torch.randn(feat_shape).to(opt.device)
         m_gen = MaskGenerator(init_mask=init_mask, classifier=inv_classifier)
+        # print("Mask Generator Initialized, Number of parameters: ", sum(p.numel() for p in m_gen.parameters()))
         opt_m = torch.optim.Adam([m_gen.mask_tanh], lr=0.01)
         for m in range(opt.mround):
             tloss = 0

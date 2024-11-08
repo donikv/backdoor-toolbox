@@ -46,64 +46,71 @@ class Tabor(BackdoorDefense):
     # upsample size, default is 1
     UPSAMPLE_SIZE = 1
 
-    def __init__(self, args, model, batch_size=32, upsample_size=UPSAMPLE_SIZE, device='cpu') -> None:
+    def __init__(self, args, batch_size=32, upsample_size=UPSAMPLE_SIZE, device='cpu') -> None:
+        super().__init__(args)
+        
         self.args = args
+        
         self.device = device
         self.batch_size = batch_size
-        self.model = model.to(device)
+        # self.model = model.to(device)
         self.loader = generate_dataloader(dataset=self.dataset, dataset_path=config.data_dir, batch_size=batch_size, split='val')
         self.return_logs = False
         self.steps = 200
+        self.input_size = self.img_size
+        self.upsample_size = upsample_size
+        self.folder_path = 'other_defenses_tool_box/results/TABOR'
+        self.oracle = None
+        if not os.path.exists(self.folder_path):
+            os.mkdir(self.folder_path)
 
 
         mask_size = np.ceil(np.array((self.input_size, self.input_size), dtype=float) /
                             upsample_size)
         mask_size = mask_size.astype(int)
         self.mask_size = mask_size
+
+        self.upsample_layer = nn.Upsample(size=(upsample_size*self.input_size, upsample_size*self.input_size))
         self.setup_mask_and_pattern()
 
 
-        self.hyperparameters = torch.tensor(np.array([1e-6, 1e-5, 1e-7, 1e-8, 0, 1e-2]), dtype=torch.float32).reshape(6, 1)
+        self.hyperparameters = torch.tensor(np.array([1e-6, 1e-5, 1e-7, 1e-8, 0, 1e-2]), dtype=torch.float32, device=self.device).reshape(6, 1)
         self.opt = torch.optim.Adam([self.pattern_tanh_tensor, self.mask_tanh_tensor], lr=1e-3, betas=(0.5, 0.9))
     
     def setup_mask_and_pattern(self):
         mask = np.zeros(self.mask_size)
-        pattern = np.zeros((self.input_size, self.input_size, 3))
+        pattern = np.zeros((1,3,self.input_size, self.input_size))
         mask = np.expand_dims(mask, axis=2)
 
         mask_tanh = np.zeros_like(mask)
         pattern_tanh = np.zeros_like(pattern)
 
         # prepare mask related tensors
-        self.mask_tanh_tensor = torch.tensor(mask_tanh, requires_grad=True)
-        mask_tensor_unrepeat = (torch.tanh(self.mask_tanh_tensor) /
-                                (2 - torch.finfo(torch.float32).eps) + 0.5)
-        mask_tensor_unexpand = mask_tensor_unrepeat.repeat(1, 1, 3)
-        self.mask_tensor = mask_tensor_unexpand.unsqueeze(0)
-        upsample_layer = nn.Upsample(size=(upsample_size, upsample_size))
-        mask_upsample_tensor_uncrop = upsample_layer(self.mask_tensor)
-        uncrop_shape = mask_upsample_tensor_uncrop.shape[2:]
+        self.mask_tanh_tensor = torch.tensor(mask_tanh, device=self.device, requires_grad=True)
+        # self.mask_upsample_tensor = self.upsample_mask(self.mask_tanh_tensor)
 
-        self.upsample_layer = upsample_layer
-        self.cropping_layer = nn.ZeroPad2d((0, uncrop_shape[1] - self.input_size, 0, uncrop_shape[0] - self.input_size))
-
-        self.mask_upsample_tensor = cropping_layer(mask_upsample_tensor_uncrop)
-        
         # prepare pattern related tensors
-        self.pattern_tanh_tensor = torch.tensor(pattern_tanh, requires_grad=True)
-        self.pattern_raw_tensor = (
-            (torch.tanh(self.pattern_tanh_tensor) / (2 - torch.finfo(torch.float32).eps) + 0.5) *
-            255.0)
+        self.pattern_tanh_tensor = torch.tensor(pattern_tanh, device=self.device, requires_grad=True)
+        # self.pattern_raw_tensor = (
+        #     (torch.tanh(self.pattern_tanh_tensor) / (2 - torch.finfo(torch.float32).eps) + 0.5) *
+        #     255.0)
     
     def upsample_mask(self, mask_tensor):
         mask_tensor_unrepeat = (torch.tanh(mask_tensor) /
                                 (2 - torch.finfo(torch.float32).eps) + 0.5)
         mask_tensor_unexpand = mask_tensor_unrepeat.repeat(1, 1, 3)
-        mask_tensor = mask_tensor_unexpand.unsqueeze(0)
+        mask_tensor = mask_tensor_unexpand.transpose(0,2).unsqueeze(0)
+        
         mask_upsample_tensor_uncrop = self.upsample_layer(mask_tensor)
         uncrop_shape = mask_upsample_tensor_uncrop.shape[2:]
+        # print('mask_tensor_unexpand', mask_tensor_unexpand.shape)
+        # print('uncrop_shape', mask_upsample_tensor_uncrop.shape)
 
-        mask_upsample_tensor = self.cropping_layer(mask_upsample_tensor_uncrop)
+        if uncrop_shape[0] == self.input_size and uncrop_shape[1] == self.input_size:
+            mask_upsample_tensor = mask_upsample_tensor_uncrop
+        else:
+            self.cropping_layer = nn.ZeroPad2d((0, uncrop_shape[1] - self.input_size, 0, uncrop_shape[0] - self.input_size))
+            mask_upsample_tensor = self.cropping_layer(mask_upsample_tensor_uncrop)
         return mask_upsample_tensor
         
 
@@ -111,14 +118,19 @@ class Tabor(BackdoorDefense):
         pattern_list = []
         mask_list = []
         loss_list = []
+        norm_list = []
         for label in range(self.num_classes):
+            if self.oracle is not None: 
+                if label != self.oracle: continue
+                else: print("<Oracle> Reversing trigger for class %d" % self.oracle)
             mask_init = np.zeros(self.mask_size)
-            pattern_init = np.zeros((self.input_size, self.input_size, 3))
+            pattern_init = np.zeros((1,3,self.input_size, self.input_size))
             pattern_best, mask_best, mask_upsample_best, loss = self.snoop(label, pattern_init, mask_init) #TODO: Implement this function
 
             mask_list.append(mask_best)
             pattern_list.append(pattern_best)
             loss_list.append(loss)
+            norm_list.append(torch.norm(mask_best, p=1).item())
 
             # np.savez(file_path, mark_list=[to_numpy(mark) for mark in mark_list],
             #          mask_list=[to_numpy(mask) for mask in mask_list],
@@ -132,24 +144,27 @@ class Tabor(BackdoorDefense):
             trigger_path = os.path.normpath(os.path.join(
                 self.folder_path, 'trigger_tabor_class=%d_%s.png' % (label, supervisor.get_dir_core(self.args, include_model_name=True, include_poison_seed=config.record_poison_seed))))
             save_image(pattern_best, mark_path)
-            save_image(mask_best, mask_path)
+            save_image(mask_best, mask_path) 
             save_image(mask_best * pattern_best, trigger_path)
             
             print('Restored trigger mark of class %d saved at:' % label, mark_path)
             print('Restored trigger mask of class %d saved at:' % label, mask_path)
             print('Restored trigger of class %d saved at:' % label, trigger_path)
+            print(f'Mask norm:  {torch.norm(mask_best, p=1).item()}, min: {torch.min(mask_best).item()}, max: {torch.max(mask_best).item()}')
             print('')
-        return pattern_list, mask_list, loss_list
+        return pattern_list, mask_list, loss_list, torch.tensor(norm_list)
 
     def train_step(self, input_tensor, y_true_tensor, y_target_tensor):
         self.opt.zero_grad()
-        self.mask_upsample_tensor = self.upsample_mask(self.mask_tensor)
+        self.mask_upsample_tensor = self.upsample_mask(self.mask_tanh_tensor)
 
         input_raw_tensor = input_tensor
         reverse_mask_tensor = (torch.ones_like(self.mask_upsample_tensor) -
                                self.mask_upsample_tensor)
 
+        
         # IMPORTANT: MASK OPERATION IN RAW DOMAIN -> TENSORFLOW WAY OF DOING IT? TODO: MOVE TO FUNCTION?
+        self.pattern_raw_tensor = ((torch.tanh(self.pattern_tanh_tensor) / (2 - torch.finfo(torch.float32).eps) + 0.5) * 255.0)
         X_adv_raw_tensor = (
             reverse_mask_tensor * input_raw_tensor +
             self.mask_upsample_tensor * self.pattern_raw_tensor)
@@ -201,7 +216,7 @@ class Tabor(BackdoorDefense):
         # R3 - Blocking triggers
         cropped_input_tensor = (torch.ones_like(self.mask_upsample_tensor) -
                                 self.mask_upsample_tensor) * input_raw_tensor
-        r3 = torch.mean(nn.functional.cross_entropy(model(cropped_input_tensor), y_true_tensor[0].view(1, -1)))
+        r3 = torch.mean(nn.functional.cross_entropy(model(cropped_input_tensor), y_true_tensor[0].view(1, -1).repeat(cropped_input_tensor.shape[0], 1).squeeze()))
 
         # R4 - Overlaying triggers
         mask_crop_tensor = self.mask_upsample_tensor * self.pattern_raw_tensor
@@ -217,7 +232,7 @@ class Tabor(BackdoorDefense):
         return torch.stack(reg_losses)
 
     def reset_opt(self):
-        self.opt.zero_grad()
+        self.opt = torch.optim.Adam([self.pattern_tanh_tensor, self.mask_tanh_tensor], lr=1e-3, betas=(0.5, 0.9))
 
     def reset_state(self, pattern_init, mask_init):
         print('resetting state')
@@ -230,17 +245,21 @@ class Tabor(BackdoorDefense):
         mask = np.expand_dims(mask, axis=2)
 
         # convert to tanh space
-        mask_tanh = np.arctanh((mask - 0.5) * (2 - np.finfo(np.float32).eps))
-        pattern_tanh = np.arctanh((pattern / 255.0 - 0.5) * (2 - np.finfo(np.float32).eps))
+        mask_tanh, pattern_tanh = mask, pattern
+        # mask_tanh = np.arctanh((mask - 0.5) * (2 - np.finfo(np.float32).eps))
+        # pattern_tanh = np.arctanh((pattern / 255.0 - 0.5) * (2 - np.finfo(np.float32).eps))
         print('mask_tanh', np.min(mask_tanh), np.max(mask_tanh))
         print('pattern_tanh', np.min(pattern_tanh), np.max(pattern_tanh))
 
-        self.mask_tanh_tensor.data = torch.tensor(mask_tanh, requires_grad=True)
-        self.pattern_tanh_tensor.data = torch.tensor(pattern_tanh, requires_grad=True)
+        self.mask_tanh_tensor = torch.tensor(mask_tanh, device=self.device, dtype=torch.float, requires_grad=True)
+        self.pattern_tanh_tensor = torch.tensor(pattern_tanh, device=self.device, dtype=torch.float, requires_grad=True)
 
         # resetting optimizer states
         self.reset_opt()
-
+    
+    def tanh_mask(self, mask):
+        return torch.tanh(mask) / (2 - torch.finfo(torch.float32).eps) + 0.5
+    
     def snoop(self, y_target, pattern_init, mask_init):
         self.reset_state(pattern_init, mask_init)
 
@@ -264,15 +283,14 @@ class Tabor(BackdoorDefense):
             for data in iter(self.loader):#range(ceil(len(x) / self.batch_size)):
                 X_batch = data[0].to(self.device) #x[idx * self.batch_size:(idx + 1) * self.batch_size]
                 Y_batch = data[1].to(self.device) #y[idx * self.batch_size:(idx + 1) * self.batch_size]
-                if Y_target is None:
-                    Y_target = torch.eye(self.num_classes)[y_target].repeat(Y_batch.shape[0], 1).to(self.device)
+                Y_target = torch.eye(self.num_classes)[y_target].repeat(Y_batch.shape[0], 1).to(self.device)
 
                 (loss_ce_value,
                  loss_reg_value,
                  loss_value) = self.train_step(X_batch, Y_batch, Y_target)
-                loss_ce_list.extend(loss_ce_value.flatten().detach().numpy())
-                loss_reg_list.extend(loss_reg_value.flatten().detach().numpy())
-                loss_list.extend(loss_value.flatten().detach().numpy())
+                loss_ce_list.extend(loss_ce_value.flatten().cpu().detach().numpy())
+                loss_reg_list.extend(loss_reg_value.flatten().cpu().detach().numpy())
+                loss_list.extend(loss_value.flatten().cpu().detach().numpy())
 
             avg_loss_ce = np.mean(loss_ce_list)
             avg_loss_reg = np.mean(loss_reg_list)
@@ -280,9 +298,11 @@ class Tabor(BackdoorDefense):
 
             # check to save best mask or not
             if avg_loss < loss_best:
-                mask_best = self.mask_tensor.detach().numpy()[0, ..., 0]
-                mask_upsample_best = self.mask_upsample_tensor.detach().numpy()[0, ..., 0]
-                pattern_best = self.pattern_raw_tensor.detach().numpy()
+                mask_best = self.tanh_mask(self.mask_tanh_tensor.clone()).cpu().detach().transpose(0, 2).unsqueeze(0)#.numpy()[...,0]
+                mask_upsample_best = self.tanh_mask(self.mask_upsample_tensor.clone()).cpu()#.detach().numpy()[0,0]
+                pattern_best = self.pattern_raw_tensor.clone().cpu().detach()#.numpy()[0].transpose(1, 2, 0)
+                # print(mask_best.shape, mask_upsample_best.shape, pattern_best.shape)
+                #print(mask_best.shape, mask_upsample_best.shape, pattern_best.shape)
                 loss_best = avg_loss
                 # with open('pattern.npy', 'wb') as f:
                 #     np.save(f, pattern_best)
@@ -295,9 +315,12 @@ class Tabor(BackdoorDefense):
 
         # save the final version
         if mask_best is None:
-            mask_best = self.mask_tensor.detach().numpy()[0, ..., 0]
-            mask_upsample_best = self.mask_upsample_tensor.detach().numpy()[0, ..., 0]
-            pattern_best = self.pattern_raw_tensor.detach().numpy()
+                mask_best = self.tanh_mask(self.mask_tanh_tensor.clone()).cpu().detach().transpose(0, 2).unsqueeze(0)#.numpy()[...,0]
+                mask_upsample_best = self.tanh_mask(self.mask_upsample_tensor.clone()).cpu()#.detach().numpy()[0,0]
+                pattern_best = self.pattern_raw_tensor.clone().cpu().detach()#.numpy()[0].transpose(1, 2, 0)
+            # mask_best = self.mask_tensor.cpu().detach().numpy()[..., 0]
+            # mask_upsample_best = self.mask_upsample_tensor.cpu().detach().numpy()[0,0]
+            # pattern_best = self.pattern_raw_tensor.cpu().detach().numpy()[0].transpose(1, 2, 0)
 
         if self.return_logs:
             return pattern_best, mask_best, mask_upsample_best, lost_best, logs
@@ -305,8 +328,12 @@ class Tabor(BackdoorDefense):
             return pattern_best, mask_best, mask_upsample_best, loss_best
     
     def detect(self):
-        mark_list, mask_list, loss_list = self.run()
-        mask_norms = mask_list.flatten(start_dim=1).norm(p=1, dim=1)
+        mark_list, mask_list, loss_list, mask_norms = self.run()
+        # if isinstance(mark_list, list):
+        #     mask_list_torch = torch.stack(mask_list)
+        #     mask_norms = mask_list_torch.flatten(start_dim=1).norm(p=1, dim=1)
+        # else:
+        #     mask_norms = mask_list.flatten(start_dim=1).norm(p=1, dim=1)
         print('mask norms: ', mask_norms)
         print('mask anomaly indices: ', normalize_mad(mask_norms))
         print('loss: ', loss_list)
@@ -320,8 +347,9 @@ class Tabor(BackdoorDefense):
         # self.suspect_class = torch.argmin(mask_norms).item()
         suspect_classes = []
         suspect_classes_anomaly_indices = []
-        if self.oracle:
-            print("<Oracle> Unlearning with reversed trigger from class %d" % self.suspect_class)
+        if self.oracle is not None:
+            print("<Oracle> Unlearning with reversed trigger from class %d" % self.oracle)
+            self.suspect_class = self.oracle
             self.unlearn()
         else:
             for i in range(self.num_classes):
@@ -340,11 +368,11 @@ class Tabor(BackdoorDefense):
         # label = config.target_class[self.args.dataset]
         label = self.suspect_class
         mark_path = os.path.normpath(os.path.join(
-            self.folder_path, 'mark_neural_cleanse_class=%d_%s.png' % (label, supervisor.get_dir_core(self.args, include_model_name=True, include_poison_seed=config.record_poison_seed))))
+            self.folder_path, 'mark_tabor_class=%d_%s.png' % (label, supervisor.get_dir_core(self.args, include_model_name=True, include_poison_seed=config.record_poison_seed))))
         mask_path = os.path.normpath(os.path.join(
-            self.folder_path, 'mask_neural_cleanse_class=%d_%s.png' % (label, supervisor.get_dir_core(self.args, include_model_name=True, include_poison_seed=config.record_poison_seed))))
+            self.folder_path, 'mask_tabor_class=%d_%s.png' % (label, supervisor.get_dir_core(self.args, include_model_name=True, include_poison_seed=config.record_poison_seed))))
         trigger_path = os.path.normpath(os.path.join(
-            self.folder_path, 'trigger_neural_cleanse_class=%d_%s.png' % (label, supervisor.get_dir_core(self.args, include_model_name=True, include_poison_seed=config.record_poison_seed))))
+            self.folder_path, 'trigger_tabor_class=%d_%s.png' % (label, supervisor.get_dir_core(self.args, include_model_name=True, include_poison_seed=config.record_poison_seed))))
         
         mark = Image.open(mark_path).convert("RGB")
         mark = transforms.ToTensor()(mark)
@@ -438,6 +466,56 @@ class Tabor(BackdoorDefense):
             
         torch.save(self.model.module.state_dict(), supervisor.get_model_dir(self.args, defense=True))
         print("Saved repaired model to {}".format(supervisor.get_model_dir(self.args, defense=True)))
+
+
+class DatasetCL(Dataset):
+    def __init__(self, ratio, full_dataset=None, transform=None, poison_ratio=0, mark=None, mask=None):
+        self.dataset = self.random_split(full_dataset=full_dataset, ratio=ratio)
+        
+        
+        id_set = list(range(0, len(self.dataset)))
+        random.shuffle(id_set)
+        num_poison = int(len(self.dataset) * poison_ratio)
+        print("Poison num:", num_poison)
+        self.poison_indices = id_set[:num_poison]
+        self.mark = mark
+        self.mask = mask
+        # pt = 0
+        # from torchvision.utils import save_image
+        # for i in range(len(self.dataset)):
+        #     if pt < num_poison and poison_indices[pt] == i:
+        #         img, gt = self.dataset[i]
+        #         img = img * (1 - mask) + mark * mask
+        #         pt += 1
+        #         if i == poison_indices[0]: save_image(img, 'a.png')
+        # save_image(self.dataset[poison_indices[0]][0], 'a1.png')
+        
+        self.transform = transform
+        self.dataLen = len(self.dataset)
+
+    def __getitem__(self, index):
+        image = self.dataset[index][0]
+        label = self.dataset[index][1]
+
+        if index in self.poison_indices:
+            image = image * (1 - self.mask) + self.mark * self.mask
+
+        if self.transform:
+            image = self.transform(image)
+
+        return image, label
+
+    def __len__(self):
+        return self.dataLen
+
+    def random_split(self, full_dataset, ratio):
+        print('full_train:', len(full_dataset))
+        train_size = int(ratio * len(full_dataset))
+        drop_size = len(full_dataset) - train_size
+        train_dataset, drop_dataset = random_split(full_dataset, [train_size, drop_size])
+        print('train_size:', len(train_dataset), 'drop_size:', len(drop_dataset))
+
+        return train_dataset
 
 # if __name__ == '__main__':
 #     parser = argparse.ArgumentParser()

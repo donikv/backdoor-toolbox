@@ -94,6 +94,10 @@ elif args.defense == 'NCG':
         mitigation=True,
     )
     defense.detect()
+elif args.defense == 'tabor':
+    from other_defenses_tool_box.tabor import Tabor
+    defense = Tabor(args, batch_size=32,device='cuda')
+    defense.detect()
 elif args.defense == 'BTI-DBFP':
     from other_defenses_tool_box.BTI_DBFP import BTIDBFP
     defense = BTIDBFP(
