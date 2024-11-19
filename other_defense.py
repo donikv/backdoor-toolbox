@@ -92,6 +92,7 @@ elif args.defense == 'NCG':
         treshold=2,
         device='cuda',
         mitigation=True,
+        #detect=False
     )
     defense.detect()
 elif args.defense == 'tabor':

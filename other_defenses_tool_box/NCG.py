@@ -31,7 +31,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 class NeuralCleanseGeneralized(BackdoorDefense):
     name: str = 'NCG'
 
-    def __init__(self, args, epoch=50, batch_size=32, treshold=2, device='cpu', mitigation=True) -> None:
+    def __init__(self, args, epoch=50, batch_size=32, treshold=2, device='cpu', mitigation=True, detect=True) -> None:
         super().__init__(args)
 
         self.args = args
@@ -46,6 +46,7 @@ class NeuralCleanseGeneralized(BackdoorDefense):
         self.acts = {}
         self.mitigation = mitigation
         self.target_label = None
+        self.run_inversion = detect
 
         self.attack_succ_threshold = 0.99
         self.init_cost = 0.01
@@ -70,19 +71,23 @@ class NeuralCleanseGeneralized(BackdoorDefense):
     def detect(self):
         features = activations_from_data(self.model, self.loader, self.layer, 'features', self.device, self.get_activation)
         self.features = torch.utils.data.DataLoader(ActivationsDataset(features), **self.train_args)
-        self.run(make_submodel(self.model, self.device), self.features)
-        self.logger.log("Neural Cleanse General finished")
-        for target in self.suspect_labels:
-            self.logger.log(f"Target: {target}, Trigger norm: {self.results[target][1]}")
-            trigger, mask = self.results[target][0]
-            trigger = torch.tensor(trigger, device=self.device, requires_grad=False)
-            mask = torch.tensor(mask, device=self.device, requires_grad=False)
+        if self.run_inversion:
+            self.run(make_submodel(self.model, self.device), self.features)
+            self.logger.log("Neural Cleanse General finished")
+            for target in self.suspect_labels:
+                self.logger.log(f"Target: {target}, Trigger norm: {self.results[target][1]}")
+                trigger, mask = self.results[target][0]
+                trigger = torch.tensor(trigger, device=self.device, requires_grad=False)
+                mask = torch.tensor(mask, device=self.device, requires_grad=False)
+                retrained_model = deepcopy(make_submodel(self.model, self.device))
+                retrained_model = self.purge(retrained_model, trigger, mask)
+                retrained_model = self.retrain(retrained_model, self.features, trigger, mask, self.device, self.criterion, epochs=100, lr=0.01, amp=1)
+                self.retrained_model = retrained_model
+                break
+        else:
             retrained_model = deepcopy(make_submodel(self.model, self.device))
-            retrained_model = self.purge(retrained_model, trigger, mask)
-            retrained_model = self.retrain(retrained_model, self.features, trigger, mask, self.device, self.criterion, epochs=100, lr=0.01, amp=1)
-            self.retrained_model = retrained_model
-            break
-        
+            retrained_model = self.retrain(retrained_model, self.features, None, None, self.device, self.criterion, epochs=100, lr=0.01, amp=1)
+            self.suspect_labels = []
         self.model = update_model(self.model, self.retrained_model) if hasattr(self, 'retrained_model') else self.model
         torch.save(self.model.module.state_dict(), supervisor.get_model_dir(self.args, defense=True))
         self.logger.log("Saved repaired model to {}".format(supervisor.get_model_dir(self.args, defense=True)))
@@ -138,19 +143,19 @@ class NeuralCleanseGeneralized(BackdoorDefense):
             return
 
         #NEW
-        if len(self.suspect_labels) > 0:
-            self.results_round2 = {}
-            self.epochs *= 2
-            for target in self.suspect_labels:
-                trigger, mask, trigger_norm, acc = self.optimize_minimal_trigger(model, clean_dataset, target)
-                self.logger.log(f"Target: {target}, Trigger norm: {trigger_norm}, Accuracy: {acc}")
-                self.results_round2[target] = ((trigger, mask), trigger_norm)
+        # if len(self.suspect_labels) > 0:
+        #     self.results_round2 = {}
+        #     self.epochs *= 2
+        #     for target in self.suspect_labels:
+        #         trigger, mask, trigger_norm, acc = self.optimize_minimal_trigger(model, clean_dataset, target)
+        #         self.logger.log(f"Target: {target}, Trigger norm: {trigger_norm}, Accuracy: {acc}")
+        #         self.results_round2[target] = ((trigger, mask), trigger_norm)
 
-            suspect_labels2 = sorted(self.results_round2.keys(), key=lambda x: self.results_round2[x][1], reverse=False)
-            self.target_label = suspect_labels2[0]
-            self.logger.log(f"Target label round 2: {self.target_label}")
-        else:
-            self.target_label = None
+        #     suspect_labels2 = sorted(self.results_round2.keys(), key=lambda x: self.results_round2[x][1], reverse=False)
+        #     self.target_label = suspect_labels2[0]
+        #     self.logger.log(f"Target label round 2: {self.target_label}")
+        # else:
+        #     self.target_label = None
 
     def optimize_minimal_trigger(self, model, clean_dataloader, target, normalize=True):
         mask = torch.zeros(self.input_size)#, requires_grad=True)
