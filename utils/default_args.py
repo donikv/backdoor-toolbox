@@ -10,9 +10,9 @@ parser_choices = {
     # 'cover_rate': [0, 0.001, 0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.1, 0.2],
     'poison_rate': [i / 1000.0 for i in range(0, 500)],
     'cover_rate': [i / 1000.0 for i in range(0, 500)],
-    'cleanser': ['SCAn', 'AC', 'SS', 'Strip', 'CT', 'SPECTRE', 'SentiNet', 'Frequency', 'NCG'],
-    'defense': ['ABL', 'NC', 'NCG', 'tabor', 'STRIP', 'FP', 'NAD', 'SentiNet', 'ScaleUp', 'SEAM', 'SFT', 'NONE', 'Frequency', 'AC', 'moth', 'IBAU', 'ANP', 'FeatureRE', 'AWM', 'RNP', 'CD', 'BaDExpert', "BTI-DBFP", "BTI-DBFU"],
-}
+    'cleanser': ['SCAn', 'AC', 'SS', 'Strip', 'CT', 'SPECTRE', 'SentiNet', 'Frequency'],
+    'defense': ['ABL', 'NC', 'STRIP', 'FP', 'NAD', 'SentiNet', 'ScaleUp', 'SEAM', 'SFT', 'NONE', 'Frequency', 'AC', 'moth', 'IBAU', 'ANP', 'FeatureRE', 'AWM', 'RNP', 'CD', 'BaDExpert', 'IBD_PSC', "BTI-DBFP", "BTI-DBFU"],
+
 
 parser_default = {
     'dataset': 'cifar10',
